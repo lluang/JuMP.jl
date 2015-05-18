@@ -7,16 +7,25 @@ function solve(m::Model; suppress_warnings=false, ignore_solve_hook=(m.solvehook
 
     ignore_solve_hook || return m.solvehook(m; suppress_warnings=suppress_warnings, kwargs...)
 
+    # Analyze model to see if any integers
+    anyInts = (length(m.sosconstr) > 0) ||
+        any(c-> !(c == :Cont || c == :Fixed), m.colCat)
+
+    if length(m.sdpconstr) > 0
+        @assert m.nlpdata == nothing
+        @assert !anyInts
+        if isa(m.solver,UnsetSolver)
+            m.solver = MathProgBase.defaultSDPsolver
+        end
+        return solveSDP(m, suppress_warnings=suppress_warnings)
+    end
+
     if m.nlpdata != nothing
         if isa(m.solver,UnsetSolver)
             m.solver = MathProgBase.defaultNLPsolver
         end
-        s = solvenlp(m, suppress_warnings=suppress_warnings)
-        return s
+        return solvenlp(m, suppress_warnings=suppress_warnings)
     end
-    # Analyze model to see if any integers
-    anyInts = (length(m.sosconstr) > 0) ||
-        any(c-> !(c == :Cont || c == :Fixed), m.colCat)
 
     if isa(m.solver,UnsetSolver) &&
       (length(m.obj.qvars1) > 0 || length(m.quadconstr) > 0)
@@ -359,6 +368,275 @@ function solveMIP(m::Model; suppress_warnings=false)
         m.colVal = MathProgBase.getsolution(m.internalModel)
     catch
         m.colVal = fill(NaN, m.numCols)
+    end
+
+    return stat
+end
+
+function solveSDP(m::Model; suppress_warnings=false)
+    @assert (length(m.quadconstr) == 0) && (length(m.obj.qvars1) == 0) # Not sure how SDP and Quadratic mixes at this point
+
+    objaff::AffExpr = m.obj.aff
+    assert_isfinite(objaff)
+    verify_ownership(m, objaff.vars)
+
+    # Create dense objective vector
+    f = zeros(m.numCols)
+    for ind in 1:length(objaff.vars)
+        f[objaff.vars[ind].col] += objaff.coeffs[ind]
+    end
+
+    # find starting column indices for sdp matrices
+    sdp_start, sdp_end = Int[], Int[]
+    var_cones = Any[]
+    for c in m.sdpconstr
+        if isa(c.terms,OneIndexedArray)
+            frst = c.terms[1,1].col
+            last = c.terms[end,end].col
+            push!(sdp_start, frst)
+            push!(sdp_end, last)
+            push!(var_cones, (:SDP,frst:last))
+        end
+    end
+
+    # Create sparse A matrix
+    # First we build it row-wise, then use the efficient transpose
+    # Theory is, this is faster than us trying to do it ourselves
+    # Intialize storage
+    linconstr = m.linconstr::Vector{LinearConstraint}
+    numLinRows = length(linconstr)
+    numBounds = 0
+    nonNeg = Int[]
+    nonPos = Int[]
+    free   = Int[]
+    in_sdp = false
+    for i in 1:m.numCols
+        lb, ub = m.colLower[i], m.colUpper[i]
+        if i in sdp_start
+            in_sdp = true
+            @assert lb == -Inf && ub == Inf
+            continue
+        end
+        if in_sdp
+            @assert lb == -Inf && ub == Inf
+            if i in sdp_end
+                in_sdp = false
+            end
+            continue
+        end
+
+        if !(lb == 0 || lb == -Inf)
+            numBounds += 1
+        end
+        if !(ub == 0 || ub == Inf)
+            numBounds += 1
+        end
+        if lb == 0
+            push!(nonNeg, i)
+        elseif ub == 0
+            push!(nonPos, i)
+        else
+            push!(free, i)
+        end
+    end
+    if !isempty(nonNeg)
+        push!(var_cones, (:NonNeg,nonNeg))
+    end
+    if !isempty(nonPos)
+        push!(var_cones, (:NonPos,nonPos))
+    end
+    if !isempty(free)
+        push!(var_cones, (:Free,free))
+    end
+
+    nnz = numBounds
+    for c in 1:numLinRows
+        nnz += length(linconstr[c].terms.coeffs)
+    end
+
+    numSDPRows = 0
+    for c in m.sdpconstr
+        if !isa(c.terms, OneIndexedArray)
+            n = size(c.terms,1)
+            @assert n == size(c.terms,2)
+            numSDPRows += convert(Int, n*(n+1)/2)
+            for i in 1:n, j in i:n
+                nnz += length(c.terms[i,j].coeffs)
+            end
+        end
+    end
+    numRows = numLinRows + numBounds + numSDPRows
+
+    b = zeros(numRows)
+
+    rowptr = Array(Int,numRows+1)
+    colval = Array(Int,nnz)
+    rownzval = Array(Float64,nnz)
+
+    # Fill it up
+    nnz = 0
+    tmprow = IndexedVector(Float64,m.numCols)
+    tmpelts = tmprow.elts
+    tmpnzidx = tmprow.nzidx
+    nonneg_rows = Int[]
+    nonpos_rows = Int[]
+    eq_rows     = Int[]
+    for c in 1:numLinRows
+        if linconstr[c].lb == -Inf
+            b[c] = linconstr[c].ub
+            push!(nonneg_rows, c)
+        elseif linconstr[c].ub == Inf
+            b[c] = linconstr[c].lb
+            push!(nonpos_rows, c)
+        elseif linconstr[c].lb == linconstr[c].ub
+            b[c] = linconstr[c].lb
+            push!(eq_rows, c)
+        else
+            error("We currently do not support ranged constraints with conic solvers")
+        end
+
+        rowptr[c] = nnz + 1
+        assert_isfinite(linconstr[c].terms)
+        coeffs = linconstr[c].terms.coeffs
+        vars = linconstr[c].terms.vars
+        # collect duplicates
+        for ind in 1:length(coeffs)
+            if !is(vars[ind].m, m)
+                error("Variable not owned by model present in constraints")
+            end
+            addelt!(tmprow,vars[ind].col, coeffs[ind])
+        end
+        for i in 1:tmprow.nnz
+            nnz += 1
+            idx = tmpnzidx[i]
+            colval[nnz] = idx
+            rownzval[nnz] = tmpelts[idx]
+        end
+        empty!(tmprow)
+    end
+
+    c = numLinRows
+    for idx in 1:m.numCols
+        lb = m.colLower[idx]
+        if !(lb == 0 || lb == -Inf)
+            println("In lowerbound")
+            nnz += 1
+            c   += 1
+            rowptr[c] = nnz
+            colval[nnz] = idx
+            rownzval[nnz] = 1
+            b[c] = lb
+            push!(nonpos_rows, c)
+        end
+        ub = m.colUpper[idx]
+        if !(ub == 0 || ub == Inf)
+            println("In upperbound")
+            nnz += 1
+            c   += 1
+            rowptr[c] = nnz
+            colval[nnz] = idx
+            rownzval[nnz] = 1
+            b[c] = ub
+            push!(nonneg_rows, c)
+        end
+    end
+
+    con_cones = Any[]
+    if !isempty(nonneg_rows)
+        push!(con_cones, (:NonNeg,nonneg_rows))
+    end
+    if !isempty(nonpos_rows)
+        push!(con_cones, (:NonPos,nonpos_rows))
+    end
+    if !isempty(eq_rows)
+        push!(con_cones, (:Zero,eq_rows))
+    end
+
+    @assert c == numLinRows + numBounds
+    for con in m.sdpconstr
+        if !isa(con.terms, OneIndexedArray)
+            sdp_start = c + 1
+            n = size(con.terms,1)
+            for i in 1:n, j in i:n
+                @show i, j
+                c += 1
+                @show terms::AffExpr = con.terms[i,j] # should add test that this type assertion is valid elsewhere...
+                @show rowptr[c] = nnz + 1
+                assert_isfinite(terms)
+                coeffs = terms.coeffs
+                vars = terms.vars
+                # collect duplicates
+                for ind in 1:length(coeffs)
+                    if !is(vars[ind].m, m)
+                        error("Variable not owned by model present in constraints")
+                    end
+                    if i == j
+                        addelt!(tmprow,vars[ind].col, coeffs[ind])
+                    else
+                        addelt!(tmprow,vars[ind].col,2coeffs[ind])
+                    end
+                end
+                for k in 1:tmprow.nnz
+                    @show nnz += 1
+                    @show idx = tmpnzidx[k]
+                    @show colval[nnz] = idx
+                    @show rownzval[nnz] = -tmpelts[idx]
+                end
+                empty!(tmprow)
+                if i == j
+                    b[c] +=  terms.constant
+                else
+                    b[c] += 2terms.constant
+                end
+            end
+            push!(con_cones, (:SDP, sdp_start:c))
+        end
+    end
+    @assert c == numRows
+    rowptr[numRows+1] = nnz + 1
+
+    @show rowptr, colval, rownzval
+    # Build the object
+    rowmat = SparseMatrixCSC(m.numCols, numRows, rowptr, colval, rownzval)
+    # Note that rowmat doesn't have sorted indices, so technically doesn't
+    # follow SparseMatrixCSC format. But it's safe to take the transpose.
+    A = rowmat'
+
+    m.internalModel = MathProgBase.model(m.solver)
+    # TODO: uncomment these lines when they work with Mosek
+    # supported = MathProgBase.supportedcones(m.internalModel)
+    # @assert (:NonNeg in supported) && (:NonPos in supported) && (:Free in supported) && (:SDP in supported)
+
+    MathProgBase.loadconicproblem!(m.internalModel, f, A, b, con_cones, var_cones)
+    MathProgBase.setsense!(m.internalModel, m.objSense)
+    m.internalModelLoaded = true
+
+    @show f, full(A), b, con_cones, var_cones
+
+    MathProgBase.optimize!(m.internalModel)
+    stat = MathProgBase.status(m.internalModel)
+
+    if stat != :Optimal
+        !suppress_warnings && warn("Not solved to optimality, status: $stat")
+        m.colVal = fill(NaN, m.numCols)
+        m.objVal = NaN
+        try # guess try/catch is necessary because we're not sure what return status we have
+            m.colVal = MathProgBase.getsolution(m.internalModel)
+        catch
+            m.colVal = fill(NaN, m.numCols)
+        end
+        try
+            # store solution values in model
+            m.objVal = MathProgBase.getobjval(m.internalModel)
+            m.objVal += m.obj.aff.constant
+        catch
+            m.objVal = NaN
+        end
+    else
+        # store solution values in model
+        m.objVal = MathProgBase.getobjval(m.internalModel)
+        m.objVal += m.obj.aff.constant
+        m.colVal = MathProgBase.getsolution(m.internalModel)
     end
 
     return stat
