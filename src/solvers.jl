@@ -609,8 +609,6 @@ function solveSDP(m::Model; suppress_warnings=false)
     MathProgBase.setsense!(m.internalModel, m.objSense)
     m.internalModelLoaded = true
 
-    # @show f, full(A), b, con_cones, var_cones
-
     MathProgBase.optimize!(m.internalModel)
     stat = MathProgBase.status(m.internalModel)
 
