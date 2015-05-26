@@ -24,9 +24,9 @@ context("With solver $(typeof(solver))") do
               1    1   1 1
               1    1   1 1]
 
-    @fact norm(XX-Xtrue) => roughly(0, 1e-3)
-    @fact norm(YY-Ytrue) => roughly(0, 1e-3)
-    @fact norm(ZZ-Ztrue) => roughly(0, 1e-3)
+    @fact norm(XX-Xtrue) => roughly(0, 1e-2)
+    @fact norm(YY-Ytrue) => roughly(0, 1e-2)
+    @fact norm(ZZ-Ztrue) => roughly(0, 1e-2)
     @fact ispsd(XX) => true
     @fact ispsd(1/2*eye(3,3)-XX) => true
     @fact ispsd(YY+ones(5,5)) => true
@@ -50,9 +50,9 @@ context("With solver $(typeof(solver))") do
               1    1   1 1
               1    1   1 1]
 
-    @fact norm(XX-Xtrue) => roughly(0, 1e-3)
-    @fact norm(YY-Ytrue) => roughly(0, 1e-3)
-    @fact norm(ZZ-Ztrue) => roughly(0, 1e-3)
+    @fact norm(XX-Xtrue) => roughly(0, 1e-2)
+    @fact norm(YY-Ytrue) => roughly(0, 1e-2)
+    @fact norm(ZZ-Ztrue) => roughly(0, 1e-2)
     @fact ispsd(XX) => true
     @fact ispsd(1/2*eye(3,3)-XX) => true
     @fact ispsd(YY+ones(5,5)) => true
@@ -61,6 +61,7 @@ context("With solver $(typeof(solver))") do
     @fact trace(XX) => roughly( 1, 1e-5)
     @fact trace(YY) => roughly( 3, 1e-5)
     @fact trace(ZZ) => roughly(-1, 1e-5)
+end; end; end
 
 facts("[sdp] Nonsensical SDP variable construction") do
     m = Model()
@@ -69,9 +70,8 @@ facts("[sdp] Nonsensical SDP variable construction") do
     @fact_throws @defVar(m, oneD[1:5], SDP)
     @fact_throws @defVar(m, threeD[1:5,1:5,1:5], SDP)
     @fact_throws @defVar(m, psd[2] <= rand(2,2), SDP)
-    @fact_throws @defVar(m, -Inf <= unbounded[3] <= Inf, SDP)
     @fact_throws @defVar(m, -ones(3,4) <= foo[1:4,1:4] <= ones(4,4), SDP)
     @fact_throws @defVar(m, -ones(4,4) <= foo[1:4,1:4] <= ones(4,5), SDP)
-    @fact_throws @defVar(m, -rand(5,5) <= nonsymmetric[5] <= rand(5,5), SDP)
-    @fact_throws @defVar(m, -1.0 <= nonzero[6] <= 1.0, SDP)
+    @fact_throws @defVar(m, -rand(5,5) <= nonsymmetric[1:5,1:5] <= rand(5,5), SDP)
+    @fact_throws @defVar(m, -1.0 <= nonzero[1:6,1:6] <= 1.0, SDP)
 end

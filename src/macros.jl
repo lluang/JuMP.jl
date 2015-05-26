@@ -761,15 +761,18 @@ macro defVar(args...)
     refcall, idxvars, idxsets, idxpairs, condition = buildrefsets(var)
     if sdp
         # Sanity checks on SDP input stuff
-        @assert condition == :()
-        @assert length(idxvars) == length(idxsets) == 2
-        @assert !hasdependentsets(idxvars, idxsets)
+        condition == :() ||
+            error("Cannot have conditional indexing for SDP variables")
+        length(idxvars) == length(idxsets) == 2 ||
+            error("SDP variables must be 2-dimensional")
+        hasdependentsets(idxvars, idxsets) &&
+            error("Cannot have index dependencies in SDP variables")
         for _rng in idxsets
-            @assert isexpr(_rng, :escape)
+            isexpr(_rng, :escape) ||
+                error("Internal error 1")
             rng = _rng.args[1] # undo escaping
-            @assert isexpr(rng,:(:))
-            @assert rng.args[1] == 1
-            @assert length(rng.args) == 2
+            (isexpr(rng,:(:)) && rng.args[1] == 1 && length(rng.args) == 2) ||
+                error("Index sets for SDP variables must be ranges of the form 1:N")
         end
 
         # special-case so that @defVar(m, x[1:3,1:3], SDP) <==> @defVar(m, x[1:3,1:3] >= 0, SDP) <===> @defVar(m, x[1:3,1:3] >= zeros(3,3), SDP)
