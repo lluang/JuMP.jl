@@ -626,14 +626,14 @@ end
 
 SDPConstraint(lhs, rhs) = SDPConstraint(lhs-rhs)
 
-function SDPConstraint(lhs, lb, ub)
-    (natural = isinf(ub)) || isinf(lb) || error("Ranged SDP constraints are not currently supported")
-    if natural
-        SDPConstraint( lhs,  lb)
-    else
-        SDPConstraint(-lhs, -ub)
-    end
-end
+# function SDPConstraint(lhs, lb, ub)
+#     (natural = all(isinf,ub)) || all(isinf,lb) || error("Ranged SDP constraints are not currently supported")
+#     if natural
+#         SDPConstraint( lhs,  lb)
+#     else
+#         SDPConstraint(-lhs, -ub)
+#     end
+# end
 
 function addConstraint(m::Model, c::SDPConstraint)
     push!(m.sdpconstr,c)

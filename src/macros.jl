@@ -786,7 +786,12 @@ macro defVar(args...)
             isa($ub, Array) || isinf($ub) || $ub == 0 || error("Invalid SDP upperbound")
             $looped
             push!($(m).dictList, $varname)
-            push!($(m).sdpconstr, SDPConstraint($varname, $lb, $ub))
+            if !(all(v->(v==0), $lb) || all(v->(v==-Inf), $lb))
+                push!($(m).sdpconstr, SDPConstraint($varname, $lb))
+            end
+            if !(all(v->(v==Inf), $ub))
+                push!($(m).sdpconstr, SDPConstraint(-$varname, -$ub))
+            end
             $varname
         end)
     else

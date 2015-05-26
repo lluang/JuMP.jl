@@ -64,8 +64,8 @@ function test0()
     W = [0.0 5.0;
          5.0 0.0]
     cut, cutval = solve_maxcut_sdp(n, W)
-    @assert cut[1] == +1.0
-    @assert cut[2] == -1.0
+    @assert cut[1] == -1.0
+    @assert cut[2] == +1.0
 
     println("Solution for Graph 0 = $cutval")
     println(cut)
