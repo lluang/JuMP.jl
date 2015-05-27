@@ -572,7 +572,6 @@ function solveSDP(m::Model; suppress_warnings=false)
                         addelt!(tmprow,vars[ind].col,2coeffs[ind])
                     end
                 end
-                # @show tmpnzidx, tmpelts
                 nnz = tmprow.nnz
                 indices = tmpnzidx[1:nnz]
                 append!(I, fill(c, nnz))
