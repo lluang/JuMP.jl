@@ -467,11 +467,14 @@ function solveSDP(m::Model; suppress_warnings=false)
     end
     numRows = numLinRows + numBounds + numSDPRows
 
-    b = zeros(numRows)
+    b = Array(Float64, numRows)
 
-    rowptr = Array(Int,numRows+1)
-    colval = Array(Int,nnz)
-    rownzval = Array(Float64,nnz)
+    I = Int[]
+    J = Int[]
+    V = Float64[]
+    @compat sizehint!(I, nnz)
+    @compat sizehint!(J, nnz)
+    @compat sizehint!(V, nnz)
 
     # Fill it up
     nnz = 0
@@ -495,7 +498,6 @@ function solveSDP(m::Model; suppress_warnings=false)
             error("We currently do not support ranged constraints with conic solvers")
         end
 
-        rowptr[c] = nnz + 1
         assert_isfinite(linconstr[c].terms)
         coeffs = linconstr[c].terms.coeffs
         vars = linconstr[c].terms.vars
@@ -506,12 +508,11 @@ function solveSDP(m::Model; suppress_warnings=false)
             end
             addelt!(tmprow,vars[ind].col, coeffs[ind])
         end
-        for i in 1:tmprow.nnz
-            nnz += 1
-            idx = tmpnzidx[i]
-            colval[nnz] = idx
-            rownzval[nnz] = tmpelts[idx]
-        end
+        nnz = tmprow.nnz
+        append!(I, fill(c, nnz))
+        indices = tmpnzidx[1:nnz]
+        append!(J, indices)
+        append!(V, tmpelts[indices])
         empty!(tmprow)
     end
 
@@ -519,23 +520,20 @@ function solveSDP(m::Model; suppress_warnings=false)
     for idx in 1:m.numCols
         lb = m.colLower[idx]
         if !(lb == 0 || lb == -Inf)
-            println("In lowerbound")
             nnz += 1
             c   += 1
-            rowptr[c] = nnz
-            colval[nnz] = idx
-            rownzval[nnz] = 1
+            push!(I, c)
+            push!(J, idx)
+            push!(V, 1.0)
             b[c] = lb
             push!(nonpos_rows, c)
         end
         ub = m.colUpper[idx]
         if !(ub == 0 || ub == Inf)
-            println("In upperbound")
-            nnz += 1
             c   += 1
-            rowptr[c] = nnz
-            colval[nnz] = idx
-            rownzval[nnz] = 1
+            push!(I, c)
+            push!(J, idx)
+            push!(V, 1.0)
             b[c] = ub
             push!(nonneg_rows, c)
         end
@@ -558,10 +556,8 @@ function solveSDP(m::Model; suppress_warnings=false)
             sdp_start = c + 1
             n = size(con.terms,1)
             for i in 1:n, j in i:n
-                @show i, j
                 c += 1
-                @show terms::AffExpr = con.terms[i,j] # should add test that this type assertion is valid elsewhere...
-                @show rowptr[c] = nnz + 1
+                terms::AffExpr = con.terms[i,j] # should add test that this type assertion is valid elsewhere...
                 assert_isfinite(terms)
                 coeffs = terms.coeffs
                 vars = terms.vars
@@ -576,31 +572,33 @@ function solveSDP(m::Model; suppress_warnings=false)
                         addelt!(tmprow,vars[ind].col,2coeffs[ind])
                     end
                 end
-                for k in 1:tmprow.nnz
-                    @show nnz += 1
-                    @show idx = tmpnzidx[k]
-                    @show colval[nnz] = idx
-                    @show rownzval[nnz] = -tmpelts[idx]
-                end
+                @show tmpnzidx, tmpelts
+                nnz = tmprow.nnz
+                indices = tmpnzidx[1:nnz]
+                append!(I, fill(c, nnz))
+                append!(J, indices)
+                append!(V, -tmpelts[indices])
                 empty!(tmprow)
                 if i == j
-                    b[c] +=  terms.constant
+                    b[c] =  terms.constant
                 else
-                    b[c] += 2terms.constant
+                    b[c] = 2terms.constant
                 end
             end
             push!(con_cones, (:SDP, sdp_start:c))
         end
     end
     @assert c == numRows
-    rowptr[numRows+1] = nnz + 1
 
-    @show rowptr, colval, rownzval
+    # @show rowptr, colval, rownzval
     # Build the object
-    rowmat = SparseMatrixCSC(m.numCols, numRows, rowptr, colval, rownzval)
+    # rowmat = SparseMatrixCSC(m.numCols, numRows, rowptr, colval, rownzval)
     # Note that rowmat doesn't have sorted indices, so technically doesn't
     # follow SparseMatrixCSC format. But it's safe to take the transpose.
-    A = rowmat'
+    # A = rowmat'
+    @show I, J, V, m.numCols, numRows
+    A = sparse(I, J, V, numRows, m.numCols)
+    @show full(A), b
 
     m.internalModel = MathProgBase.model(m.solver)
     # TODO: uncomment these lines when they work with Mosek
@@ -611,7 +609,7 @@ function solveSDP(m::Model; suppress_warnings=false)
     MathProgBase.setsense!(m.internalModel, m.objSense)
     m.internalModelLoaded = true
 
-    @show f, full(A), b, con_cones, var_cones
+    # @show f, full(A), b, con_cones, var_cones
 
     MathProgBase.optimize!(m.internalModel)
     stat = MathProgBase.status(m.internalModel)

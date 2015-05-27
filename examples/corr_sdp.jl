@@ -44,4 +44,3 @@ println("Maximum value is ", getValue(X)[1,3])
 solve(m)
 println("Minimum value is ", getValue(X)[1,3])
 @assert -0.9779 >= getValue(X)[1,3] >= -0.9799
-#
