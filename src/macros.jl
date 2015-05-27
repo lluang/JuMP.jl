@@ -77,11 +77,11 @@ buildrefsets(c::Nothing) = (gensym(), Any[], Any[], IndexPair[], :())
 #       idxpairs: As defined for buildrefsets
 #       sym: A symbol or expression containing the element type of the
 #            resulting container, e.g. :AffExpr or :Variable
-function getloopedcode(c::Expr, code, condition, idxvars, idxsets, idxpairs, sym; sdp=false)
+function getloopedcode(c::Expr, code, condition, idxvars, idxsets, idxpairs, sym; lowertri=false)
     varname = getname(c)
     hascond = (condition != :())
 
-    if sdp
+    if lowertri
         @assert !hascond
         @assert length(idxvars)  == 2
         @assert length(idxpairs) == 2
@@ -781,7 +781,7 @@ macro defVar(args...)
         end
 
         code = :( $(refcall) = Variable($m, -Inf, Inf, $(quot(t)), "", $value) )
-        looped = getloopedcode(var, code, condition, idxvars, idxsets, idxpairs, :Variable; sdp=sdp)
+        looped = getloopedcode(var, code, condition, idxvars, idxsets, idxpairs, :Variable; lowertri=sdp)
         varname = esc(getname(var))
         return assert_validmodel(m, quote
             $(esc(idxsets[1].args[1].args[2])) == $(esc(idxsets[2].args[1].args[2])) || error("Cannot construct nonsymmetric semidefinite matrix")
