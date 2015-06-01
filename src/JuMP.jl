@@ -619,7 +619,7 @@ type SDPConstraint <: JuMPConstraint
 end
 
 # Special-case X ≥ 0, which is often convenient
-function SDPConstraint(lhs, rhs::Number)
+function SDPConstraint(lhs::Union(OneIndexedArray,Matrix), rhs::Number)
     rhs == 0 || error("Cannot construct a semidefinite constraint with nonzero scalar bound $rhs")
     SDPConstraint(lhs)
 end
