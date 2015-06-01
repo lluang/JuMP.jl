@@ -99,12 +99,13 @@ function getloopedcode(c::Expr, code, condition, idxvars, idxsets, idxpairs, sym
                 $vname[$j,$i] = tmp
             end
         end
-    elseif hascond
-        code = quote
-            $(esc(condition)) || continue
-            $code
-        end
     else
+        if hascond
+            code = quote
+                $(esc(condition)) || continue
+                $code
+            end
+        end
         for (idxvar, idxset) in zip(reverse(idxvars),reverse(idxsets))
             code = quote
                 for $(esc(idxvar)) in $idxset

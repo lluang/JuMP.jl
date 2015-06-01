@@ -572,7 +572,7 @@ function solveSDP(m::Model; suppress_warnings=false)
                         addelt!(tmprow,vars[ind].col,2coeffs[ind])
                     end
                 end
-                @show tmpnzidx, tmpelts
+                # @show tmpnzidx, tmpelts
                 nnz = tmprow.nnz
                 indices = tmpnzidx[1:nnz]
                 append!(I, fill(c, nnz))
@@ -596,9 +596,9 @@ function solveSDP(m::Model; suppress_warnings=false)
     # Note that rowmat doesn't have sorted indices, so technically doesn't
     # follow SparseMatrixCSC format. But it's safe to take the transpose.
     # A = rowmat'
-    @show I, J, V, m.numCols, numRows
+    # @show I, J, V, m.numCols, numRows
     A = sparse(I, J, V, numRows, m.numCols)
-    @show full(A), b
+    # @show full(A), b
 
     m.internalModel = MathProgBase.model(m.solver)
     # TODO: uncomment these lines when they work with Mosek
