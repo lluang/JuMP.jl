@@ -286,16 +286,6 @@ end
 # A bunch of operator junk to make matrix multiplication and friends act
 # reasonably sane with JuMP types
 
-###############################################################################
-# A bunch of operator junk to make matrix multiplication and friends act
-# reasonably sane with JuMP types
-
-typealias JuMPTypes Union(Variable,AffExpr,QuadExpr)
-
-###############################################################################
-# A bunch of operator junk to make matrix multiplication and friends act
-# reasonably sane with JuMP types
-
 typealias JuMPTypes Union(Variable,AffExpr,QuadExpr)
 
 Base.promote_rule{R<:Real}(::Type{Variable},::Type{R}       ) = AffExpr

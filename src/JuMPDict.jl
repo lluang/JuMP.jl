@@ -135,7 +135,7 @@ end
 for accessor in (:getDual, :getLower, :getUpper)
     @eval $accessor(x::JuMPContainer) = map($accessor,x)
     # return a matrix here
-    # @eval $accessor(x::OneIndexedArray) = map($accessor, x.innerArray)
+    @eval $accessor(x::OneIndexedArray) = map($accessor, x.innerArray)
 end
 getValue(x::OneIndexedArray) = getValue(x.innerArray)
 
@@ -150,7 +150,6 @@ function getValue(x::JuMPContainer)
     end
     ret
 end
-getValue(x::OneIndexedArray) = getValue(x.innerArray)
 
 # delegate zero-argument functions
 for f in (:(Base.endof), :(Base.ndims), :(Base.length), :(Base.abs), :(Base.start))
