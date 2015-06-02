@@ -150,6 +150,7 @@ function getValue(x::JuMPContainer)
     end
     ret
 end
+getValue(x::OneIndexedArray) = getValue(x.innerArray)
 
 # delegate zero-argument functions
 for f in (:(Base.endof), :(Base.ndims), :(Base.length), :(Base.abs), :(Base.start))
