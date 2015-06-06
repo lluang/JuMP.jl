@@ -66,10 +66,11 @@ end; end; end
 facts("[sdp] Nonsensical SDP variable construction") do
     m = Model()
     @fact_throws @defVar(m, unequal[1:5,1:6], SDP)
-    @fact_throws @defVar(m, notone[1:5,2:6], SDP)
-    @fact_throws @defVar(m, oneD[1:5], SDP)
-    @fact_throws @defVar(m, threeD[1:5,1:5,1:5], SDP)
-    @fact_throws @defVar(m, psd[2] <= rand(2,2), SDP)
+    # Some of these errors happen at compile time, so we can't use @fact_throws
+    @fact macroexpand(:(@defVar(m, notone[1:5,2:6], SDP))).head => :error
+    @fact macroexpand(:(@defVar(m, oneD[1:5], SDP))).head => :error
+    @fact macroexpand(:(@defVar(m, threeD[1:5,1:5,1:5], SDP))).head => :error
+    @fact macroexpand(:(@defVar(m, psd[2] <= rand(2,2), SDP))).head => :error
     @fact_throws @defVar(m, -ones(3,4) <= foo[1:4,1:4] <= ones(4,4), SDP)
     @fact_throws @defVar(m, -ones(4,4) <= foo[1:4,1:4] <= ones(4,5), SDP)
     @fact_throws @defVar(m, -rand(5,5) <= nonsymmetric[1:5,1:5] <= rand(5,5), SDP)
