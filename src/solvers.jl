@@ -374,7 +374,7 @@ function solveMIP(m::Model; suppress_warnings=false)
 end
 
 function solveSDP(m::Model; suppress_warnings=false)
-    @assert (length(m.quadconstr) == 0) && (length(m.obj.qvars1) == 0) # Not sure how SDP and Quadratic mixes at this point
+    # @assert (length(m.quadconstr) == 0) && (length(m.obj.qvars1) == 0) # Not sure how SDP and Quadratic mixes at this point
 
     objaff::AffExpr = m.obj.aff
     assert_isfinite(objaff)
@@ -598,6 +598,7 @@ function solveSDP(m::Model; suppress_warnings=false)
 
     MathProgBase.loadconicproblem!(m.internalModel, f, A, b, con_cones, var_cones)
     MathProgBase.setsense!(m.internalModel, m.objSense)
+    addQuadratics(m)
     m.internalModelLoaded = true
 
     MathProgBase.optimize!(m.internalModel)

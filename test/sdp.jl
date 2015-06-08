@@ -138,3 +138,28 @@ facts("[sdp] Nonsensical SDPs") do
     Y[1,2] += 1
     @fact_throws @addSDPConstraint(m, Y <= ones(5,5))
 end
+
+facts("[sdp] SDP with quadratics") do
+for solver in sdp_solvers
+context("With solver $(typeof(solver))") do
+    m = Model(solver=solver)
+    @defVar(m, X[1:2,1:2], SDP)
+    @defVar(m, y[0:2])
+    @addConstraint(m, y[0] >= 0)
+    @addConstraint(m, y[1]^2 + y[2]^2 <= y[0]^2)
+    @addSDPConstraint(m, X <= eye(2))
+    @addConstraint(m, X[1,1] + X[1,2] == y[1] + y[2])
+    @setObjective(m, Max, trace(X) - y[0])
+    stat = solve(m)
+
+    @fact stat => :Optimal
+    XX, yy = getValue(X), getValue(y)
+    @fact ispsd(XX) => true
+    @fact yy[0] >= 0 => true
+    @fact yy[1]^2 + yy[2]^2 <= yy[0]^2 => true
+    @fact ispsd(eye(2)-XX) => true
+    @fact (XX[1,1] + XX[1,2]) - (yy[1] + yy[2]) => roughly(0,1e-4)
+    @fact norm(XX - eye(2)) => roughly(0, 1e-4)
+    @fact norm(yy - [1/sqrt(2), 0.5, 0.5]) => roughly(0, 1e-4)
+    @fact getObjectiveValue(m) => roughly(1.293, 1e-2)
+end; end; end
