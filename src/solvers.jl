@@ -566,11 +566,7 @@ function solveSDP(m::Model; suppress_warnings=false)
                     if !is(vars[ind].m, m)
                         error("Variable not owned by model present in constraints")
                     end
-                    if i == j
-                        addelt!(tmprow,vars[ind].col, coeffs[ind])
-                    else
-                        addelt!(tmprow,vars[ind].col,2coeffs[ind])
-                    end
+                    addelt!(tmprow,vars[ind].col, coeffs[ind])
                 end
                 nnz = tmprow.nnz
                 indices = tmpnzidx[1:nnz]
@@ -578,11 +574,7 @@ function solveSDP(m::Model; suppress_warnings=false)
                 append!(J, indices)
                 append!(V, -tmpelts[indices])
                 empty!(tmprow)
-                if i == j
-                    b[c] =  terms.constant
-                else
-                    b[c] = 2terms.constant
-                end
+                b[c] =  terms.constant
             end
             push!(con_cones, (:SDP, sdp_start:c))
         end
