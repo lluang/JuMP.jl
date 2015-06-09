@@ -317,6 +317,9 @@ function Base.issym{T<:JuMPTypes}(x::Matrix{T})
     true
 end
 
+# Special-case because the the base version wants to do fill!(::Array{Variable}, zero(AffExpr))
+Base.diagm(x::Vector{Variable}) = diagm(convert(Vector{AffExpr}, x))
+
 ###############
 # The _multiply!(buf,y,z) adds the results of y*z into the buffer buf. No bounds/size
 # checks are performed; it is expected that the caller has done this, has ensured
