@@ -437,8 +437,8 @@ function (*){T<:JuMPTypes}(A::Union(Array,SparseMatrixCSC), x::Array{T})
 end
 
 for op in [:+, :-, :*]; @eval begin
-    $op{T<:JuMPTypes}(lhs::Real,rhs::AbstractArray{T}) = map(c->$op(lhs,c), full(rhs))
-    $op{T<:JuMPTypes}(lhs::AbstractArray{T},rhs::Real) = map(c->$op(c,rhs), full(lhs))
+    $op{T<:JuMPTypes}(lhs::Number,rhs::AbstractArray{T}) = map(c->$op(lhs,c), full(rhs))
+    $op{T<:JuMPTypes}(lhs::AbstractArray{T},rhs::Number) = map(c->$op(c,rhs), full(lhs))
     $op{T<:JuMPTypes}(lhs::T,rhs::AbstractArray) = map(c->$op(lhs,c), full(rhs))
     $op{T<:JuMPTypes}(lhs::AbstractArray,rhs::T) = map(c->$op(c,rhs), full(lhs))
     $op(lhs::Real,rhs::OneIndexedArray) = $op(lhs, rhs.innerArray)
@@ -455,11 +455,13 @@ end; end
 # Special-case sparse matrix scalar multiplicaiton
 (*){T<:JuMPTypes}(lhs::T, rhs::SparseMatrixCSC) =
     SparseMatrixCSC(rhs.m, rhs.n, copy(rhs.colptr), copy(rhs.rowval), lhs .* rhs.nzval)
-(*){T<:JuMPTypes}(lhs, rhs::SparseMatrixCSC{T}) =
+(*){T<:JuMPTypes}(lhs::Number, rhs::SparseMatrixCSC{T}) = scale(rhs, lhs)
+(*){T<:JuMPTypes}(lhs::JuMPTypes, rhs::SparseMatrixCSC{T}) =
     SparseMatrixCSC(rhs.m, rhs.n, copy(rhs.colptr), copy(rhs.rowval), lhs .* rhs.nzval)
 (*){T<:JuMPTypes}(lhs::SparseMatrixCSC, rhs::T) =
     SparseMatrixCSC(lhs.m, lhs.n, copy(lhs.colptr), copy(lhs.rowval), lhs.nzval .* rhs)
-(*){T<:JuMPTypes}(lhs, rhs::SparseMatrixCSC{T}) =
+(*){T<:JuMPTypes}(lhs::SparseMatrixCSC{T}, rhs::Number) = scale(lhs, rhs)
+(*){T<:JuMPTypes}(lhs::SparseMatrixCSC{T}, rhs::JuMPTypes) =
     SparseMatrixCSC(lhs.m, lhs.n, copy(lhs.colptr), copy(lhs.rowval), lhs.nzval .* rhs)
 # The following are primarily there for internal use in the macro code for @addConstraint
 for op in [:(+), :(-)]; @eval begin

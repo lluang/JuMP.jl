@@ -192,9 +192,6 @@ end
 Base.done(x::JuMPArray,k) = done(x.innerArray,k)
 Base.done(x::JuMPDict,k)  = done(x.tupledict,k)
 
-(-)(x::JuMPArray,y::Array) = x.innerArray-y
-(-)(x::Array,y::JuMPArray) = x-y.innerArray
-
 Base.eltype{T}(x::JuMPContainer{T}) = T
 
 Base.full(x::JuMPContainer) = x

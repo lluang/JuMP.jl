@@ -154,7 +154,7 @@ context("With solver $(typeof(solver))") do
     @fact ispsd(eye(2)-XX) => true
     @fact (XX[1,1] + XX[1,2]) - (yy[1] + yy[2]) => roughly(0,1e-4)
     @fact norm(XX - eye(2)) => roughly(0, 1e-4)
-    @fact norm(yy - [1/sqrt(2), 0.5, 0.5]) => roughly(0, 1e-4)
+    @fact norm(yy[:] - [1/sqrt(2), 0.5, 0.5]) => roughly(0, 1e-4)
     @fact getObjectiveValue(m) => roughly(1.293, 1e-2)
 end; end; end
 
