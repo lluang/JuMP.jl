@@ -252,7 +252,7 @@ end; end; end
 function operator_norm(model, A)
     m, n = size(A,1), size(A,2)
     @defVar(model, t >= 0)
-    @addSDPConstraint(model, [diagm(fill(t, n)) A; A' diagm(fill(t, n))] >= 0)
+    @addSDPConstraint(model, [t*eye(n) A; A' eye(n)*t] >= 0)
     return t
 end
 
@@ -273,7 +273,7 @@ end; end; end
 function lambda_max(model, A)
     m, n = size(A,1), size(A,2)
     @defVar(model, t)
-    @addSDPConstraint(model, diagm(fill(t, n)) - A >= 0)
+    @addSDPConstraint(model, speye(n)*t - A >= 0)
     @addSDPConstraint(model, A >= 0)
     return t
 end
@@ -293,7 +293,7 @@ end; end; end
 function lambda_min(model, A)
     m, n = size(A,1), size(A,2)
     @defVar(model, t)
-    @addSDPConstraint(model, A - diagm(fill(t, n)) >= 0)
+    @addSDPConstraint(model, A - eye(n)*t >= 0)
     @addSDPConstraint(model, A >= 0)
     return t
 end

@@ -436,44 +436,33 @@ function (*){T<:JuMPTypes}(A::Union(Array,SparseMatrixCSC), x::Array{T})
     return ret
 end
 
-for op in [:+, :-, :*]
-    @eval begin
-        $op{T<:JuMPTypes}(lhs::Real,rhs::Array{T}) = map(c->$op(lhs,c), rhs)
-        $op{T<:JuMPTypes}(lhs::Array{T},rhs::Real) = map(c->$op(c,rhs), lhs)
-        $op(lhs::Real,rhs::OneIndexedArray) = $op(lhs, rhs.innerArray)
-        $op(lhs::OneIndexedArray,rhs::Real) = $op(lhs.innerArray, rhs)
+for op in [:+, :-, :*]; @eval begin
+    $op{T<:JuMPTypes}(lhs::Real,rhs::AbstractArray{T}) = map(c->$op(lhs,c), full(rhs))
+    $op{T<:JuMPTypes}(lhs::AbstractArray{T},rhs::Real) = map(c->$op(c,rhs), full(lhs))
+    $op{T<:JuMPTypes}(lhs::T,rhs::AbstractArray) = map(c->$op(lhs,c), full(rhs))
+    $op{T<:JuMPTypes}(lhs::AbstractArray,rhs::T) = map(c->$op(c,rhs), full(lhs))
+    $op(lhs::Real,rhs::OneIndexedArray) = $op(lhs, rhs.innerArray)
+    $op(lhs::OneIndexedArray,rhs::Real) = $op(lhs.innerArray, rhs)
 
-        $op(lhs::OneIndexedArray, rhs::Array) = $op(lhs.innerArray, rhs)
-        $op(lhs::Array, rhs::OneIndexedArray) = $op(lhs, rhs.innerArray)
+    $op(lhs::OneIndexedArray, rhs::AbstractArray) = $op(lhs.innerArray, rhs)
+    $op(lhs::AbstractArray, rhs::OneIndexedArray) = $op(lhs, rhs.innerArray)
 
-        $op{T<:JuMPTypes}(lhs::Array{T},rhs::OneIndexedArray) = $op(lhs,rhs.innerArray)
-        $op{T<:JuMPTypes}(lhs::OneIndexedArray,rhs::Array{T}) = $op(lhs.innerArray,rhs)
-        $op(lhs::OneIndexedArray,rhs::OneIndexedArray) = $op(lhs.innerArray,rhs.innerArray)
-    end
-end
+    $op{T<:JuMPTypes}(lhs::AbstractArray{T},rhs::OneIndexedArray) = $op(lhs,rhs.innerArray)
+    $op{T<:JuMPTypes}(lhs::OneIndexedArray,rhs::AbstractArray{T}) = $op(lhs.innerArray,rhs)
+    $op(lhs::OneIndexedArray,rhs::OneIndexedArray) = $op(lhs.innerArray,rhs.innerArray)
+end; end
 
+# Special-case sparse matrix scalar multiplicaiton
+(*){T<:JuMPTypes}(lhs::T, rhs::SparseMatrixCSC) =
+    SparseMatrixCSC(rhs.m, rhs.n, copy(rhs.colptr), copy(rhs.rowval), lhs .* rhs.nzval)
+(*){T<:JuMPTypes}(lhs, rhs::SparseMatrixCSC{T}) =
+    SparseMatrixCSC(rhs.m, rhs.n, copy(rhs.colptr), copy(rhs.rowval), lhs .* rhs.nzval)
+(*){T<:JuMPTypes}(lhs::SparseMatrixCSC, rhs::T) =
+    SparseMatrixCSC(lhs.m, lhs.n, copy(lhs.colptr), copy(lhs.rowval), lhs.nzval .* rhs)
+(*){T<:JuMPTypes}(lhs, rhs::SparseMatrixCSC{T}) =
+    SparseMatrixCSC(lhs.m, lhs.n, copy(lhs.colptr), copy(lhs.rowval), lhs.nzval .* rhs)
 # The following are primarily there for internal use in the macro code for @addConstraint
 for op in [:(+), :(-)]; @eval begin
-    function $op(lhs::GenericAffExpr, rhs::Array)
-        (isempty(lhs.vars) && isempty(lhs.coeffs)) || error("Cannot perform $typeof(lhs)) + $(typeof(rhs))")
-        $op(lhs.constant, rhs)
-    end
-    function $op(lhs::Array, rhs::GenericAffExpr)
-        (isempty(rhs.vars) && isempty(rhs.coeffs)) || error("Cannot perform $typeof(lhs)) + $(typeof(rhs))")
-        $op(lhs, rhs.constant)
-    end
-    function $op(lhs::GenericQuadExpr, rhs::Array)
-        (isempty(lhs.qvars1) && isempty(lhs.qvars2) && isempty(lhs.qcoeffs) &&
-            isempty(lhs.aff.vars) && isempty(lhs.aff.coeffs)) ||
-            error("Cannot perform $typeof(lhs)) + $(typeof(rhs))")
-        $op(lhs.aff.constant, rhs)
-    end
-    function $op(lhs::Array, rhs::GenericQuadExpr)
-        (isempty(rhs.qvars1) && isempty(rhs.qvars2) && isempty(rhs.qcoeffs) &&
-            isempty(rhs.aff.vars) && isempty(rhs.aff.coeffs)) ||
-            error("Cannot perform $typeof(lhs)) + $(typeof(rhs))")
-        $op(lhs, rhs.aff.constant)
-    end
     function $op(lhs::Array{Variable},rhs::Array{Variable})
         (sz = size(lhs)) == size(rhs) || error("Incompatible sizes for $op: $sz $op $(size(rhs))")
         ret = Array(AffExpr, sz)
@@ -493,8 +482,8 @@ for (dotop,op) in [(:.+,:+), (:.-,:-), (:.*,:*), (:./,:/)]
         $dotop{T<:JuMPTypes}(lhs::Array{T},rhs::Real) = map(c->$op(c,rhs), lhs)
         $dotop(lhs::Real,rhs::OneIndexedArray) = $dotop(lhs, rhs.innerArray)
         $dotop(lhs::OneIndexedArray,rhs::Real) = $dotop(lhs.innerArray, rhs)
-        $dotop{T<:JuMPTypes,S<:JuMPTypes}(lhs::T,rhs::Array{S}) = map(c->$op(lhs,c), rhs)
-        $dotop{T<:JuMPTypes,S<:JuMPTypes}(lhs::Array{T},rhs::S) = map(c->$op(c,rhs), lhs)
+        $dotop{T<:JuMPTypes}(lhs::T,rhs::Array) = map(c->$op(lhs,c), rhs)
+        $dotop{T<:JuMPTypes}(lhs::Array,rhs::T) = map(c->$op(c,rhs), lhs)
 
         $dotop{T<:JuMPTypes,N}(lhs::Array{T,N},rhs::OneIndexedArray) = $dotop(lhs,rhs.innerArray)
         $dotop{T<:JuMPTypes,N}(lhs::OneIndexedArray,rhs::Array{T,N}) = $dotop(lhs.innerArray,rhs)
@@ -503,7 +492,7 @@ for (dotop,op) in [(:.+,:+), (:.-,:-), (:.*,:*), (:./,:/)]
 end
 (+){T<:JuMPTypes}(x::Array{T}) = x
 (+)(x::OneIndexedArray) = x.innerArray
-(-)(x::Array{Variable}) = (-)(convert(Array{AffExpr},x))
+(-){N}(x::Array{Variable,N}) = (-)(convert(Array{AffExpr,N},x))
 (-)(x::OneIndexedArray) = -x.innerArray
 (*){T<:JuMPTypes}(x::Array{T}) = x
 (*)(x::OneIndexedArray) = x.innerArray
