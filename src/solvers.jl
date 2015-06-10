@@ -373,6 +373,21 @@ function solveMIP(m::Model; suppress_warnings=false)
     return stat
 end
 
+function collect_expr!(m, tmprow, terms::AffExpr)
+    empty!(tmprow)
+    assert_isfinite(terms)
+    coeffs = terms.coeffs
+    vars = terms.vars
+    # collect duplicates
+    for ind in 1:length(coeffs)
+        if !is(vars[ind].m, m)
+            error("Variable not owned by model present in constraints")
+        end
+        addelt!(tmprow,vars[ind].col, coeffs[ind])
+    end
+    tmprow
+end
+
 function solveSDP(m::Model; suppress_warnings=false)
     # @assert (length(m.quadconstr) == 0) && (length(m.obj.qvars1) == 0) # Not sure how SDP and Quadratic mixes at this point
 
@@ -455,17 +470,22 @@ function solveSDP(m::Model; suppress_warnings=false)
     end
 
     numSDPRows = 0
+    numSymRows = 0
     for c in m.sdpconstr
+        n = size(c.terms,1)
         if !isa(c.terms, OneIndexedArray)
-            n = size(c.terms,1)
             @assert n == size(c.terms,2)
             numSDPRows += convert(Int, n*(n+1)/2)
             for i in 1:n, j in i:n
                 nnz += length(c.terms[i,j].coeffs)
             end
         end
+        if !issym(c.terms)
+            # symmetry constraints
+            numSymRows += convert(Int, n*(n-1)/2)
+        end
     end
-    numRows = numLinRows + numBounds + numSDPRows
+    numRows = numLinRows + numBounds + numSDPRows + numSymRows
 
     b = Array(Float64, numRows)
 
@@ -551,32 +571,39 @@ function solveSDP(m::Model; suppress_warnings=false)
     end
 
     @assert c == numLinRows + numBounds
+    tmpelts = tmprow.elts
+    tmpnzidx = tmprow.nzidx
     for con in m.sdpconstr
         if !isa(con.terms, OneIndexedArray)
             sdp_start = c + 1
             n = size(con.terms,1)
             for i in 1:n, j in i:n
                 c += 1
-                terms::AffExpr = con.terms[i,j] # should add test that this type assertion is valid elsewhere...
-                assert_isfinite(terms)
-                coeffs = terms.coeffs
-                vars = terms.vars
-                # collect duplicates
-                for ind in 1:length(coeffs)
-                    if !is(vars[ind].m, m)
-                        error("Variable not owned by model present in constraints")
-                    end
-                    addelt!(tmprow,vars[ind].col, coeffs[ind])
-                end
+                terms = con.terms[i,j] # should add test that this type assertion is valid elsewhere...
+                collect_expr!(m, tmprow, terms)
                 nnz = tmprow.nnz
                 indices = tmpnzidx[1:nnz]
                 append!(I, fill(c, nnz))
                 append!(J, indices)
                 append!(V, -tmpelts[indices])
-                empty!(tmprow)
-                b[c] =  terms.constant
+                b[c] = terms.constant
             end
             push!(con_cones, (:SDP, sdp_start:c))
+        end
+        if !issym(con.terms)
+            sym_start = c + 1
+            # add linear symmetry constraints
+            for i in 1:n, j in 1:(i-1)
+                c += 1
+                collect_expr!(m, tmprow, con.terms[i,j] - con.terms[j,i])
+                nnz = tmprow.nnz
+                indices = tmpnzidx[1:nnz]
+                append!(I, fill(c, nnz))
+                append!(J, indices)
+                append!(V, tmpelts[indices])
+                b[c] = 0
+            end
+            push!(con_cones, (:Zero, sym_start:c))
         end
     end
     @assert c == numRows
@@ -597,8 +624,8 @@ function solveSDP(m::Model; suppress_warnings=false)
     # @assert (:NonNeg in supported) && (:NonPos in supported) && (:Free in supported) && (:SDP in supported)
 
     MathProgBase.loadconicproblem!(m.internalModel, f, A, b, con_cones, var_cones)
-    MathProgBase.setsense!(m.internalModel, m.objSense)
     addQuadratics(m)
+    MathProgBase.setsense!(m.internalModel, m.objSense)
     m.internalModelLoaded = true
 
     MathProgBase.optimize!(m.internalModel)

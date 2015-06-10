@@ -788,6 +788,7 @@ macro defVar(args...)
             $(esc(idxsets[1].args[1].args[2])) == $(esc(idxsets[2].args[1].args[2])) || error("Cannot construct nonsymmetric semidefinite matrix")
             isa($lb, Array) || isinf($lb) || $lb == 0 || error("Invalid SDP lowerbound")
             isa($ub, Array) || isinf($ub) || $ub == 0 || error("Invalid SDP upperbound")
+            (issym($lb) && issym($ub)) || error("Bounds on semidefinite variables must be symmetric")
             $looped
             push!($(m).dictList, $varname)
             registervar($m, $(quot(getname(var))), $varname)

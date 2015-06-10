@@ -612,10 +612,6 @@ Base.copy(sos::SOSConstraint, new_model::Model) =
 # is taken w.r.t. the psd partial order.
 type SDPConstraint <: JuMPConstraint
     terms # purposely leave this untyped so that we can special-case OneIndexedArray with no additional variables
-    function SDPConstraint(lhs)
-        issym(lhs)|| error("Cannot construct nonsymmetic SDP constraint")
-        new(lhs)
-    end
 end
 
 # Special-case X ≥ 0, which is often convenient

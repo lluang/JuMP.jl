@@ -131,12 +131,6 @@ facts("[sdp] Nonsensical SDPs") do
     @fact_throws @defVar(m, -ones(4,4) <= foo[1:4,1:4] <= ones(4,5), SDP)
     @fact_throws @defVar(m, -rand(5,5) <= nonsymmetric[1:5,1:5] <= rand(5,5), SDP)
     @fact_throws @defVar(m, -1.0 <= nonzero[1:6,1:6] <= 1.0, SDP)
-
-    # test that nonsymmetric constraints throw
-    @defVar(m, X[1:5,1:5], SDP)
-    Y = eye(5)*X
-    Y[1,2] += 1
-    @fact_throws @addSDPConstraint(m, Y <= ones(5,5))
 end
 
 facts("[sdp] SDP with quadratics") do
@@ -163,3 +157,182 @@ context("With solver $(typeof(solver))") do
     @fact norm(yy - [1/sqrt(2), 0.5, 0.5]) => roughly(0, 1e-4)
     @fact getObjectiveValue(m) => roughly(1.293, 1e-2)
 end; end; end
+
+# Adapt SDP atom tests from Convex.jl:
+#   https://github.com/JuliaOpt/Convex.jl/blob/master/test/test_sdp.jl
+# facts("[sdp] Test problem #1") do
+# for solver in sdp_solvers
+# context("With solver $(typeof(solver))") do
+#     m = Model(solver=solver)
+#     @defVar(m, X[1:2,1:2], SDP)
+#     @setObjective(m, Max, X[1,1])
+#     stat = solve(m)
+#     @fact stat => :Unbounded
+
+#     setObjectiveSense(m, :Min)
+#     stat = solve(m)
+#     @fact stat => :Optimal
+#     @fact getObjectiveValue(m) => roughly(0, 1e-6)
+
+#     @addConstraint(m, X[1,1] == 1)
+#     stat = solve(m)
+#     @fact stat => :Optimal
+#     @fact getObjectiveValue(m) => roughly(1, 1e-6)
+#     @fact getValue(X[1,1]) => roughly(1, 1e-6)
+
+#     @setObjective(m, Min, sum(diag(X)))
+#     stat = solve(m)
+#     @fact stat => :Optimal
+#     @fact getObjectiveValue(m) => roughly(1, 1e-6)
+# end; end; end
+
+facts("[sdp] Test problem #2") do
+for solver in sdp_solvers
+context("With solver $(typeof(solver))") do
+    m = Model(solver=solver)
+    @defVar(m, Y[1:3,1:3], SDP)
+    @addConstraint(m, Y[2,1] <= 4)
+    @addConstraint(m, Y[2,2] >= 3)
+    @setObjective(m, Min, trace(Y))
+    stat = solve(m)
+    @fact stat => :Optimal
+    @fact getObjectiveValue(m) => roughly(3, 1e-6)
+end; end; end
+
+facts("[sdp] Test problem #3") do
+for solver in sdp_solvers
+context("With solver $(typeof(solver))") do
+    m = Model(solver=solver)
+    @defVar(m, x >= 0)
+    @defVar(m, Y[1:3,1:3], SDP)
+    @addConstraint(m, Y[2,1] == 1)
+    @setObjective(m, Min, Y[1,2])
+    stat = solve(m)
+    @fact stat => :Optimal
+    @fact getObjectiveValue(m) => roughly(1, 1e-6)
+end; end; end
+
+facts("[sdp] Test problem #4") do
+for solver in sdp_solvers
+context("With solver $(typeof(solver))") do
+    m = Model(solver=solver)
+    @defVar(m, x >= 0)
+    @defVar(m, Y[1:3,1:3], SDP)
+    @addConstraint(m, x >= 1)
+    @addConstraint(m, Y[2,1] == 1)
+    @setObjective(m, Min, x + Y[1,1])
+    stat = solve(m)
+    @fact stat => :Optimal
+    @fact getObjectiveValue(m) => roughly(1, 1e-6)
+end; end; end
+
+function nuclear_norm(model, A)
+    m, n = size(A,1), size(A,2)
+    @defVar(model, U[1:m,1:m])
+    # @defVar(model, V[1:n,1:n])
+    # @addSDPConstraint(model, [U A; A' V] >= 0)
+    @addSDPConstraint(model, [U A; A' U'] >= 0)
+    return 0.5(trace(U) + trace(U'))
+end
+
+facts("[sdp] Test problem #5") do
+for solver in sdp_solvers
+context("With solver $(typeof(solver))") do
+    m = Model(solver=solver)
+    @defVar(m, Y[1:3,1:3], SDP)
+    @addConstraint(m, Y[2,1] <= 4)
+    @addConstraint(m, Y[2,2] >= 3)
+    @addConstraint(m, Y[3,3] <= 2)
+    @setObjective(m, Min, nuclear_norm(m, Y))
+    stat = solve(m)
+    @fact stat => :Optimal
+    @fact getObjectiveValue(m) => roughly(3, 1e-6)
+end; end; end
+
+function operator_norm(model, A)
+    m, n = size(A,1), size(A,2)
+    @defVar(model, t >= 0)
+    @addSDPConstraint(model, [diagm(fill(t, n)) A; A' diagm(fill(t, n))] >= 0)
+    return t
+end
+
+facts("[sdp] Test problem #6") do
+for solver in sdp_solvers
+context("With solver $(typeof(solver))") do
+    m = Model(solver=solver)
+    @defVar(m, Y[1:3,1:3])
+    @addConstraint(m, Y[2,1] <= 4)
+    @addConstraint(m, Y[2,2] >= 3)
+    @addConstraint(m, sum(Y) >= 12)
+    @setObjective(m, Min, operator_norm(m, Y))
+    stat = solve(m)
+    @fact stat => :Optimal
+    @fact getObjectiveValue(m) => roughly(4, 1e-6)
+end; end; end
+
+function lambda_max(model, A)
+    m, n = size(A,1), size(A,2)
+    @defVar(model, t)
+    @addSDPConstraint(model, diagm(fill(t, n)) - A >= 0)
+    @addSDPConstraint(model, A >= 0)
+    return t
+end
+
+facts("[sdp] Test problem #7") do
+for solver in sdp_solvers
+context("With solver $(typeof(solver))") do
+    m = Model(solver=solver)
+    @defVar(m, Y[1:3,1:3])
+    @addConstraint(m, Y[1,1] >= 4)
+    @setObjective(m, Min, lambda_max(m, Y))
+    stat = solve(m)
+    @fact stat => :Optimal
+    @fact getObjectiveValue(m) => roughly(4, 1e-6)
+end; end; end
+
+function lambda_min(model, A)
+    m, n = size(A,1), size(A,2)
+    @defVar(model, t)
+    @addSDPConstraint(model, A - diagm(fill(t, n)) >= 0)
+    @addSDPConstraint(model, A >= 0)
+    return t
+end
+
+facts("[sdp] Test problem #8") do
+for solver in sdp_solvers
+context("With solver $(typeof(solver))") do
+    m = Model(solver=solver)
+    @defVar(m, Y[1:3,1:3], SDP)
+    @addConstraint(m, trace(Y) <= 6)
+    @setObjective(m, Max, lambda_min(m, Y))
+    stat = solve(m)
+    @fact stat => :Optimal
+    @fact getObjectiveValue(m) => roughly(2, 1e-6)
+end; end; end
+
+# function matrix_frac(model, x, P)
+#     n = size(P,1)
+#     @defVar(model, t)
+#     @defVar(model, M[1:(n+1),1:(n+1)])
+#     @addConstraint(model, M[1:n,1:n] .== P)
+#     @addConstraint(model, M[1:n,n+1] .== x)
+#     @addConstraint(model, M[n+1,n+1] == t)
+#     @addSDPConstraint(model, M >= 0)
+#     return t
+# end
+
+# facts("[sdp] Test problem #9") do
+# for solver in sdp_solvers
+# context("With solver $(typeof(solver))") do
+#     m = Model(solver=solver)
+#     x = [1,2,3]
+#     lb = 0.5eye(3)
+#     ub = 2eye(3)
+#     @defVar(m, lb[i,j] <= P[i=1:3,j=1:3] <= ub[i,j])
+#     # @addConstraint(m, 0.5eye(3) .<= P .<= 2eye(3))
+#     @setObjective(m, Min, matrix_frac(m, x, P))
+#     stat = solve(m)
+#     @fact stat => :Optimal
+#     @fact getObjectiveValue(m) => roughly(7, 1e-6)
+# end; end; end
+
