@@ -229,10 +229,9 @@ end; end; end
 function nuclear_norm(model, A)
     m, n = size(A,1), size(A,2)
     @defVar(model, U[1:m,1:m])
-    # @defVar(model, V[1:n,1:n])
-    # @addSDPConstraint(model, [U A; A' V] >= 0)
-    @addSDPConstraint(model, [U A; A' U'] >= 0)
-    return 0.5(trace(U) + trace(U'))
+    @defVar(model, V[1:n,1:n])
+    @addSDPConstraint(model, [U A; A' V] >= 0)
+    return 0.5(trace(U) + trace(V'))
 end
 
 facts("[sdp] Test problem #5") do
