@@ -99,6 +99,10 @@ function Base.show(io::IO, m::Model)
     if nquad > 0
         println(io, " * $(nquad) quadratic constraint$(plural(nquad))")
     end
+    nsdp = length(m.sdpconstr)
+    if nsdp > 0
+        println(io, " * $(nsdp) semidefinite constraint$(plural(nsdp))")
+    end
     nlp = m.nlpdata
     if nlp != nothing && length(nlp.nlconstr) > 0
         println(io, " * $(length(nlp.nlconstr)) nonlinear constraint$(plural(length(nlp.nlconstr)))")
