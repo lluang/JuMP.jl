@@ -388,6 +388,7 @@ function collect_expr!(m, tmprow, terms::AffExpr)
     tmprow
 end
 
+const ε = 1e-12
 function solveSDP(m::Model; suppress_warnings=false)
     # @assert (length(m.quadconstr) == 0) && (length(m.obj.qvars1) == 0) # Not sure how SDP and Quadratic mixes at this point
 
@@ -401,17 +402,82 @@ function solveSDP(m::Model; suppress_warnings=false)
         f[objaff.vars[ind].col] += objaff.coeffs[ind]
     end
 
+    var_cones = Any[]
+    con_cones = Any[]
+    nnz = 0
+
     # find starting column indices for sdp matrices
     sdp_start, sdp_end = Int[], Int[]
-    var_cones = Any[]
+    numSDPRows = 0
+    numSymRows = 0
     for c in m.sdpconstr
+        n = size(c.terms,1)
+        @assert n == size(c.terms,2)
+        @assert ndims(c.terms) == 2
         if isa(c.terms,OneIndexedArray)
             frst = c.terms[1,1].col
             last = c.terms[end,end].col
             push!(sdp_start, frst)
             push!(sdp_end, last)
             push!(var_cones, (:SDP,frst:last))
+        else
+            numSDPRows += convert(Int, n*(n+1)/2)
+            for i in 1:n, j in i:n
+                nnz += length(c.terms[i,j].coeffs)
+            end
         end
+        if !issym(c.terms)
+            # symmetry constraints
+            numSymRows += convert(Int, n*(n-1)/2)
+        end
+    end
+
+    soc_cones  = Any[]
+    rsoc_cones = Any[]
+    numQuadRows = 0
+    for qconstr in m.quadconstr
+        q = copy(qconstr.terms)
+        if qconstr.sense == :(>=)
+            q *= -1
+        end
+        if !(isempty(q.aff.vars) && q.aff.constant == 0)
+            error("Quadratic constraint $qconstr must be in second-order cone form")
+        end
+        n_pos_on_diag = 0
+        off_diag_idx  = 0
+        neg_diag_idx  = 0
+        n = length(q.qvars1)
+        for i in 1:n
+            if q.qvars1[i].col == q.qvars2[i].col
+                if q.qcoeffs[i] == 1
+                    n_pos_on_diag += 1
+                elseif q.qcoeffs[i] == -1
+                    neg_diag_idx == off_diag_idx == 0 || error("Invalid SOC constraint $qconstr")
+                    neg_diag_idx = i
+                end
+            else
+                if q.qcoeffs[i] == -1
+                    neg_diag_idx == off_diag_idx == 0 || error("Invalid rotated SOC constraint $qconstr")
+                    off_diag_idx = i
+                end
+            end
+        end
+        cone = Array(Int, n)
+        if n_pos_on_diag == n-1 && neg_diag_idx > 0
+            cone[1] = q.qvars1[neg_diag_idx].col
+            for i in 1:(neg_diag_idx-1); cone[i+1] = q.qvars1[i].col; end
+            for i in (neg_diag_idx+1):n; cone[i]   = q.qvars1[i].col; end
+            push!(soc_cones, cone)
+        elseif n_pos_on_diag == n-1 && off_diag_idx > 0
+            cone[1] = q.qvars1[off_diag_idx].col
+            cone[2] = q.qvars2[off_diag_idx].col
+            for i in 1:(off_diag_idx-1); cone[i+2] = q.qvars1[i].col; end
+            for i in (off_diag_idx+1):n; cone[i+1] = q.qvars1[i].col; end
+            # push!(rsoc_cones, cone)
+        else
+            error("Quadratic constraint $qconstr is not conic representable")
+        end
+        numQuadRows += length(cone)
     end
 
     # Create sparse A matrix
@@ -464,28 +530,12 @@ function solveSDP(m::Model; suppress_warnings=false)
         push!(var_cones, (:Free,free))
     end
 
-    nnz = numBounds
+    nnz += numBounds
     for c in 1:numLinRows
         nnz += length(linconstr[c].terms.coeffs)
     end
 
-    numSDPRows = 0
-    numSymRows = 0
-    for c in m.sdpconstr
-        n = size(c.terms,1)
-        if !isa(c.terms, OneIndexedArray)
-            @assert n == size(c.terms,2)
-            numSDPRows += convert(Int, n*(n+1)/2)
-            for i in 1:n, j in i:n
-                nnz += length(c.terms[i,j].coeffs)
-            end
-        end
-        if !issym(c.terms)
-            # symmetry constraints
-            numSymRows += convert(Int, n*(n-1)/2)
-        end
-    end
-    numRows = numLinRows + numBounds + numSDPRows + numSymRows
+    numRows = numLinRows + numBounds + numQuadRows + numSDPRows + numSymRows
 
     b = Array(Float64, numRows)
 
@@ -559,7 +609,6 @@ function solveSDP(m::Model; suppress_warnings=false)
         end
     end
 
-    con_cones = Any[]
     if !isempty(nonneg_rows)
         push!(con_cones, (:NonNeg,nonneg_rows))
     end
@@ -569,8 +618,28 @@ function solveSDP(m::Model; suppress_warnings=false)
     if !isempty(eq_rows)
         push!(con_cones, (:Zero,eq_rows))
     end
-
     @assert c == numLinRows + numBounds
+
+    for cone in soc_cones
+        n = length(cone)
+        rng = (c+1):(c+n)
+        append!(I, rng)
+        append!(J, copy(cone))
+        append!(V, [-1.0, ones(n-1)])
+        push!(con_cones, (:SOC,rng))
+        c += n
+    end
+    for cone in rsoc_cones
+        n = length(cone)
+        rng = (c+1):(c+n)
+        append!(I, rng)
+        append!(J, copy(cone))
+        append!(V, [-1.0, -1.0, ones(n-2)])
+        push!(con_cones, (:SOCRotated,rng))
+        c += n
+    end
+    @assert c == numLinRows + numBounds + numQuadRows
+
     tmpelts = tmprow.elts
     tmpnzidx = tmprow.nzidx
     for con in m.sdpconstr
@@ -608,12 +677,6 @@ function solveSDP(m::Model; suppress_warnings=false)
     end
     @assert c == numRows
 
-    # @show rowptr, colval, rownzval
-    # Build the object
-    # rowmat = SparseMatrixCSC(m.numCols, numRows, rowptr, colval, rownzval)
-    # Note that rowmat doesn't have sorted indices, so technically doesn't
-    # follow SparseMatrixCSC format. But it's safe to take the transpose.
-    # A = rowmat'
     # @show I, J, V, m.numCols, numRows
     A = sparse(I, J, V, numRows, m.numCols)
     # @show full(A), b
@@ -623,9 +686,9 @@ function solveSDP(m::Model; suppress_warnings=false)
     # supported = MathProgBase.supportedcones(m.internalModel)
     # @assert (:NonNeg in supported) && (:NonPos in supported) && (:Free in supported) && (:SDP in supported)
 
-    # @show con_cones, var_cones
+    # @show f, A, b, con_cones, var_cones
     MathProgBase.loadconicproblem!(m.internalModel, f, A, b, con_cones, var_cones)
-    addQuadratics(m)
+    # addQuadratics(m)
     MathProgBase.setsense!(m.internalModel, m.objSense)
     m.internalModelLoaded = true
 
