@@ -426,6 +426,7 @@ function solveSDP(m::Model; suppress_warnings=false)
     free   = Int[]
     in_sdp = false
     for i in 1:m.numCols
+        lb, ub = m.colLower[i], m.colUpper[i]
         if i in sdp_start
             in_sdp = true
             @assert lb == -Inf && ub == Inf
