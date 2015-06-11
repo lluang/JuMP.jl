@@ -335,3 +335,33 @@ end; end; end
 #     @fact getObjectiveValue(m) => roughly(7, 1e-6)
 # end; end; end
 
+facts("[sdp] Correlation example") do
+for solver in sdp_solvers
+context("With solver $(typeof(solver))") do
+    m = Model(solver=solver)
+
+    @defVar(m, X[1:3,1:3], SDP)
+
+    # Diagonal is 1s
+    @addConstraint(m, X[1,1] == 1)
+    @addConstraint(m, X[2,2] == 1)
+    @addConstraint(m, X[3,3] == 1)
+
+    # Bounds on the known correlations
+    @addConstraint(m, X[1,2] >= -0.2)
+    @addConstraint(m, X[1,2] <= -0.1)
+    @addConstraint(m, X[2,3] >=  0.4)
+    @addConstraint(m, X[2,3] <=  0.5)
+
+    # Find upper bound
+    @setObjective(m, Max, X[1,3])
+    stat = solve(m)
+    @fact stat => :Optimal
+    @fact +0.8719 <= getValue(X)[1,3] <= +0.8720 => true
+
+    # Find lower bound
+    @setObjective(m, Min, X[1,3])
+    stat = solve(m)
+    @fact stat => :Optimal
+    @fact -0.9779 >= getValue(X)[1,3] >= -0.9799 => true
+end; end; end

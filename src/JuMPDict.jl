@@ -195,5 +195,6 @@ Base.done(x::JuMPDict,k)  = done(x.tupledict,k)
 Base.eltype{T}(x::JuMPContainer{T}) = T
 
 Base.full(x::JuMPContainer) = x
+Base.full(x::OneIndexedArray) = x.innerArray
 
 export @gendict

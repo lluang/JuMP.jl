@@ -426,18 +426,9 @@ function solveSDP(m::Model; suppress_warnings=false)
     free   = Int[]
     in_sdp = false
     for i in 1:m.numCols
-        lb, ub = m.colLower[i], m.colUpper[i]
         if i in sdp_start
             in_sdp = true
             @assert lb == -Inf && ub == Inf
-            continue
-        end
-        if in_sdp
-            @assert lb == -Inf && ub == Inf
-            if i in sdp_end
-                in_sdp = false
-            end
-            continue
         end
 
         if !(lb == 0 || lb == -Inf)
@@ -450,8 +441,16 @@ function solveSDP(m::Model; suppress_warnings=false)
             push!(nonNeg, i)
         elseif ub == 0
             push!(nonPos, i)
+        elseif in_sdp
+            # do nothing
         else
             push!(free, i)
+        end
+        if in_sdp
+            @assert lb == -Inf && ub == Inf
+            if i in sdp_end
+                in_sdp = false
+            end
         end
     end
     if !isempty(nonNeg)
@@ -623,6 +622,7 @@ function solveSDP(m::Model; suppress_warnings=false)
     # supported = MathProgBase.supportedcones(m.internalModel)
     # @assert (:NonNeg in supported) && (:NonPos in supported) && (:Free in supported) && (:SDP in supported)
 
+    # @show con_cones, var_cones
     MathProgBase.loadconicproblem!(m.internalModel, f, A, b, con_cones, var_cones)
     addQuadratics(m)
     MathProgBase.setsense!(m.internalModel, m.objSense)
